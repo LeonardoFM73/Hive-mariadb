@@ -8,30 +8,34 @@ export HIVE_AUX_JARS_PATH=/opt/hive/lib/mariadb.jar
 echo "Waiting for MariaDB to be ready..."
 sleep 10
 
-# Pastikan driver ada di tempat yang benar
-echo "Ensuring MariaDB driver is accessible..."
+# Pastikan driver ada
 if [ ! -f /opt/hive/lib/mariadb.jar ]; then
   echo "ERROR: MariaDB driver not found!"
   exit 1
 fi
 
-# Cek apakah schema sudah ada
-echo "Checking if schema exists..."
-if ! /opt/hive/bin/schematool -dbType mysql -info 2>&1 | grep -q "Hive distribution version"; then
-  echo "Schema not found. Initializing..."
-  
-  # Set HADOOP_CLASSPATH untuk schematool
-  export HADOOP_CLASSPATH=/opt/hive/lib/mariadb.jar
-  
-  # Init schema dengan verbose untuk debugging
-  /opt/hive/bin/schematool -dbType mysql -initOrUpgradeSchema -verbose
+echo "Initializing Hive schema directly with Java..."
+
+# Jalankan schematool langsung dengan java dan classpath yang eksplisit
+# Ini adalah cara paling pasti untuk memastikan driver dimuat
+SCHEMA_JAR=$(ls /opt/hive/lib/hive-standalone-metastore-*.jar 2>/dev/null | head -1)
+
+if [ -z "$SCHEMA_JAR" ]; then
+  # Jika tidak ada standalone jar, gunakan semua jar
+  java -cp "/opt/hive/lib/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hive/lib/mariadb.jar" \
+    org.apache.hive.beeline.schematool.HiveSchemaTool \
+    -dbType mysql \
+    -initOrUpgradeSchema
 else
-  echo "Schema already exists, skipping initialization..."
+  # Gunakan standalone jar
+  java -cp "$SCHEMA_JAR:/opt/hive/lib/mariadb.jar:/opt/hive/lib/*" \
+    org.apache.hive.beeline.schematool.HiveSchemaTool \
+    -dbType mysql \
+    -initOrUpgradeSchema
 fi
 
-# Start metastore dengan environment yang benar
+# Start metastore
 echo "Starting Hive Metastore..."
 export HADOOP_CLASSPATH=/opt/hive/lib/mariadb.jar
-export CLASSPATH=/opt/hive/lib/mariadb.jar:$CLASSPATH
 
 exec /opt/hive/bin/hive --service metastore
