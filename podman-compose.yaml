@@ -1,0 +1,61 @@
+version: "3"
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: hive-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: example
+      MARIADB_DATABASE: metastore
+      MARIADB_USER: hive
+      MARIADB_PASSWORD: hivepass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  metastore-standalone:
+    image: apache/hive:4.0.1
+    container_name: hive-metastore
+    depends_on:
+      - mariadb
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: mysql
+      HIVE_AUX_JARS_PATH: /opt/hive/lib/mariadb.jar
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.mariadb.jdbc.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:mysql://mariadb:3306/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hivepass
+    volumes:
+      - /home/leonardofm/.m2/repository/org/mariadb/jdbc/mariadb-java-client/3.4.0/mariadb-java-client-3.4.0.jar:/opt/hive/lib/mariadb.jar
+      - ./conf/hive-site.xml:/opt/hive/conf/hive-site.xml
+    ports:
+      - "9083:9083"
+
+
+
+  hiveserver2-standalone:
+    image: apache/hive:4.0.1
+    container_name: hive-server2
+    depends_on:
+      - metastore-standalone
+    environment:
+      SERVICE_NAME: hiveserver2
+      IS_RESUME: true
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.mariadb.jdbc.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:mysql://mariadb:3306/metastore
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hivepass
+        -Dhive.metastore.uris=thrift://metastore-standalone:9083
+    volumes:
+      - /home/leonardofm/.m2/repository/org/mariadb/jdbc/mariadb-java-client/3.4.0/mariadb-java-client-3.4.0.jar:/opt/hive/lib/mariadb.jar
+      - ./conf/hive-site.xml:/opt/hive/conf/hive-site.xml
+    ports:
+      - "10000:10000"
+
+volumes:
+  mariadb_data:
