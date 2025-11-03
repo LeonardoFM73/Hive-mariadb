@@ -14,28 +14,31 @@ if [ ! -f /opt/hive/lib/mariadb.jar ]; then
   exit 1
 fi
 
-echo "Initializing Hive schema directly with Java..."
+echo "Initializing Hive schema..."
 
-# Jalankan schematool langsung dengan java dan classpath yang eksplisit
-# Ini adalah cara paling pasti untuk memastikan driver dimuat
-SCHEMA_JAR=$(ls /opt/hive/lib/hive-standalone-metastore-*.jar 2>/dev/null | head -1)
+# Set HADOOP_CLASSPATH
+export HADOOP_CLASSPATH=/opt/hive/lib/mariadb.jar
+export HADOOP_USER_CLASSPATH_FIRST=true
 
-if [ -z "$SCHEMA_JAR" ]; then
-  # Jika tidak ada standalone jar, gunakan semua jar
-  java -cp "/opt/hive/lib/*:/opt/hadoop/share/hadoop/common/lib/*:/opt/hadoop/share/hadoop/common/*:/opt/hive/lib/mariadb.jar" \
-    org.apache.hive.beeline.schematool.HiveSchemaTool \
+# Cari hive schematool jar
+HIVE_SCHEMATOOL_JAR=$(ls /opt/hive/lib/hive-standalone-metastore-*.jar 2>/dev/null | head -1)
+
+if [ -z "$HIVE_SCHEMATOOL_JAR" ]; then
+  # Fallback ke hive-schematool jar
+  HIVE_SCHEMATOOL_JAR=$(ls /opt/hive/lib/hive-schematool-*.jar 2>/dev/null | head -1)
+fi
+
+if [ -n "$HIVE_SCHEMATOOL_JAR" ]; then
+  echo "Using JAR: $HIVE_SCHEMATOOL_JAR"
+  # Jalankan via hadoop jar command dengan classpath
+  /opt/hadoop/bin/hadoop jar "$HIVE_SCHEMATOOL_JAR" org.apache.hive.beeline.schematool.HiveSchemaTool \
     -dbType mysql \
     -initOrUpgradeSchema
 else
-  # Gunakan standalone jar
-  java -cp "$SCHEMA_JAR:/opt/hive/lib/mariadb.jar:/opt/hive/lib/*" \
-    org.apache.hive.beeline.schematool.HiveSchemaTool \
-    -dbType mysql \
-    -initOrUpgradeSchema
+  # Fallback ke schematool script
+  /opt/hive/bin/schematool -dbType mysql -initOrUpgradeSchema
 fi
 
 # Start metastore
 echo "Starting Hive Metastore..."
-export HADOOP_CLASSPATH=/opt/hive/lib/mariadb.jar
-
 exec /opt/hive/bin/hive --service metastore
